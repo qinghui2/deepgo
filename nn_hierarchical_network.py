@@ -60,7 +60,9 @@ ind = 0
     help='Ontology id (mf, bp, cc)')
 @ck.option(
     '--device',
-    default='gpu:0',
+    # default='gpu:0',
+    default='cpu:0', # use cpu instead
+
     help='GPU or CPU device id')
 @ck.option(
     '--org',
@@ -118,7 +120,7 @@ def main(function, device, org, train, param):
         #     i /= 4
         #     conv = i % 4
         #     i /= 4
-        #     den = i 
+        #     den = i
         #     params['embedding_dims'] = dims[dim]
         #     params['nb_filter'] = nb_filters[nb_fil]
         #     params['nb_conv'] = nb_convs[conv]
@@ -138,10 +140,12 @@ def load_data(org=None):
     print(n)
     index = df.index.values
     valid_n = int(n * 0.8)
+    valid_n_end = int(n*0.9)
     train_df = df.loc[index[:valid_n]]
-    valid_df = df.loc[index[valid_n:]]
+    valid_df = df.loc[index[valid_n:valid_n_end]]
 
-    # test_df = valid_df
+
+    test_df = df.loc[index[valid_n_end:]]
     if org is not None:
         logging.info('Unfiltered test size: %d' % len(test_df))
         test_df = test_df[test_df['orgs'] == org]
@@ -175,7 +179,8 @@ def load_data(org=None):
 
     train = get_values(train_df)
     valid = get_values(valid_df)
-    test = get_values(train_df[:10000])
+    test = get_values(test_df)
+    # test = get_values(train_df[:10000])
 
     return train, valid, test, train_df, valid_df, test_df
 
@@ -326,7 +331,7 @@ def model(params, batch_size=128, nb_epoch=6, is_train=True):
     logging.info("Validation data size: %d" % len(val_data[0]))
     logging.info("Test data size: %d" % len(test_data[0]))
 
-    model_path = (DATA_ROOT + 'models/model_' + FUNCTION + '.h5') 
+    model_path = (DATA_ROOT + 'models/model_' + FUNCTION + '.h5')
                   # '-' + str(params['embedding_dims']) +
                   # '-' + str(params['nb_filter']) +
                   # '-' + str(params['nb_conv']) +
@@ -516,7 +521,7 @@ def compute_mcc(preds, labels):
     mcc = matthews_corrcoef(labels.flatten(), preds.flatten())
     return mcc
 
-
+#
 def compute_performance(preds, labels, gos):
     preds = np.round(preds, 2)
     f_max = 0
