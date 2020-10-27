@@ -1,0 +1,7 @@
+train, valid, test split = 0.8, 0.1, 0.1
+Using commit: 3a4f6e0a8d3741fcc642a6ceae566fef58d6741b
+Results:
+Fmax measure:       0.298217 0.334018 0.269348 0.020000
+ROC AUC:    0.723890 
+MCC:        0.148583 
+
