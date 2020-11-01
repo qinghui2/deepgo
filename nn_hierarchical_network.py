@@ -108,7 +108,8 @@ def main(function, device, org, train, param):
             'pool_length': 64,
             'stride': 32
         }
-        model(params, is_train=train)
+        # model(params, is_train=train)
+        model(params, is_train=True)
         # dims = [64, 128, 256, 512]
         # nb_filters = [16, 32, 64, 128]
         # nb_convs = [1, 2, 3, 4]
@@ -204,7 +205,7 @@ def get_feature_model(params):
     model.add(MaxPooling1D(
         pool_length=params['pool_length'], stride=params['stride']))
     model.add(Flatten())
-    model.summary()
+    summmary = model.summary()
     return model
 
 
@@ -315,7 +316,7 @@ def get_model(params):
     return model
 
 
-def model(params, batch_size=128, nb_epoch=6, is_train=True):
+def model(params, batch_size=128, nb_epoch=1, is_train=True):
     # set parameters:
     nb_classes = len(functions)
     start_time = time.time()
@@ -362,7 +363,7 @@ def model(params, batch_size=128, nb_epoch=6, is_train=True):
             callbacks=[checkpointer, earlystopper])
     logging.info('Loading best model')
     start_time = time.time()
-    model = load_model(model_path)
+    #model = load_model(model_path)
     logging.info('Loading time: %d' % (time.time() - start_time))
     # orgs = ['9606', '10090', '10116', '7227', '7955',
     #         '559292', '3702', '284812', '6239',

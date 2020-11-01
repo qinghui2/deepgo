@@ -1,0 +1,12 @@
+
+ch 1/1
+20096/20179 [============================>.] - ETA: 13s - loss: 0.4893Epoch 00000: val_loss improved from inf to 0.47955, saving model to data/swiss/models/model_mf.h5
+20179/20179 [==============================] - 3550s - loss: 0.4892 - val_loss: 0.4796
+INFO:Loading best model
+INFO:Loading time: 0
+INFO:Running time: 158 2523
+INFO:Computing performance
+INFO:Fmax measure: 	 0.032675 0.235583 0.017555 0.010000
+INFO:ROC AUC: 	 0.500893 
+INFO:MCC: 	 0.001612 
+0.033 & 0.236 & 0.018 & 0.501 & 0.002
