@@ -130,9 +130,48 @@ def main(function, device, org, train, param):
             # print(dims[dim], nb_filters[nb_fil], nb_convs[conv], nb_dense[den], f)
     # performanc_by_interpro()
 
+#extract taxa from dataframe(each taxa is a protein sequence)
+#if the df is train df, return 20179 sequences, for tree reconstruct
+def extract_taxa(df):
+    pass
+
+
+#replace the embedding(network) with fixed vector, n>0 and n<1
+def replace_with_fixed_embedding(df,n):
+    # emb_frame = df['embeddings']#.to_frame()
+    # d = 2
+   # pass
+    for index, row in df.iterrows():
+        embd = row['embeddings']
+        fixed_vec = n*np.ones_like(embd)
+        ind = index
+        #embd[str(index)]['embeddings']=fixed_vec
+        # r = df[14149]['embeddings']
+        df.loc[index, 'embeddings'] = fixed_vec
+        t = 1
+
+    for index, row in df.iterrows():
+        embd = row['embeddings']
+
+
+# replace the embedding with tree based embeddings
+def replace_with_tree_based_embedding(df):
+    pass
+
+#replace the embeddings in the dataframe df with random embeddings
+def replace_with_random_embedding(df):
+
+    pass
+
+#replace the embeddings in datafram df with one hot embeddings
+def replace_with_one_hot_embedding(df):
+
+    pass
+
+
 
 def load_data(org=None):
-
+    #size 25224
     df = pd.read_pickle(DATA_ROOT + 'train' + '-' + FUNCTION + '.pkl')
 
     test_df = pd.read_pickle(DATA_ROOT + 'test' + '-' + FUNCTION + '.pkl')
@@ -142,11 +181,27 @@ def load_data(org=None):
     index = df.index.values
     valid_n = int(n * 0.8)
     valid_n_end = int(n*0.9)
-    train_df = df.loc[index[:valid_n]]
-    valid_df = df.loc[index[valid_n:valid_n_end]]
+    #train df, 8 columbns, accessions, gos, labels, ngrams, proteins, sequences, orgs, embeddings
+    train_df = df.loc[index[:valid_n]] # size 20179
+    net_embeddings = train_df['embeddings']#20179*256 network embeddings training set
+    valid_df = df.loc[index[valid_n:valid_n_end]]#size 2522
+    test_df = df.loc[index[valid_n_end:]]#size 2523
+    # replace_with_random_embedding(train_df)
+    # replace_with_random_embedding(valid_df)
+    # replace_with_random_embedding(test_df)
+    ## replace the embeddings in the train df with fixed embeddings, for test
+    replace_with_fixed_embedding(train_df, 0.1)
+    # net_embeddings = train_df['embeddings'].to_frame()
+    # ind = net_embeddings.index
+    # arr = net_embeddings.array
+    # vals = net_embeddings.values
+    replace_with_fixed_embedding(valid_df,0.1)
 
-
-    test_df = df.loc[index[valid_n_end:]]
+    replace_with_fixed_embedding(test_df, 0.1)
+    tr = train_df
+    net_embeddings = train_df['embeddings'].to_frame()
+    vl = valid_df
+    ts = test_df
     if org is not None:
         logging.info('Unfiltered test size: %d' % len(test_df))
         test_df = test_df[test_df['orgs'] == org]
@@ -290,8 +345,8 @@ def get_layers(inputs):
 def get_model(params):
     logging.info("Building the model")
     inputs = Input(shape=(MAXLEN,), dtype='int32', name='input1')
-    inputs2 = Input(shape=(REPLEN,), dtype='float32', name='input2')
-    feature_model = get_feature_model(params)(inputs)
+    inputs2 = Input(shape=(REPLEN,), dtype='float32', name='input2')#network embedding
+    feature_model = get_feature_model(params)(inputs)#embedding layer without network embedding
     net = merge(
         [feature_model, inputs2], mode='concat',
         concat_axis=1, name='merged')
@@ -301,7 +356,7 @@ def get_model(params):
     output_models = []
     for i in range(len(functions)):
         output_models.append(layers[functions[i]]['output'])
-    net = merge(output_models, mode='concat', concat_axis=1)
+    net = merge(output_models, mode='concat', concat_axis=1)#concatenation of inputs1(the mebdding of 3grams) and inputs2(the network embedding)
     # net = Dense(1024, activation='relu')(merged)
     # net = Dense(len(functions), activation='sigmoid')(net)
     model = Model(input=[inputs, inputs2], output=net)
