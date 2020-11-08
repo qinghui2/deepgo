@@ -132,8 +132,16 @@ def main(function, device, org, train, param):
 
 #extract taxa from dataframe(each taxa is a protein sequence)
 #if the df is train df, return 20179 sequences, for tree reconstruct
+# return a dictionary where key is the id of the protein sequence and value is the protein sequence
 def extract_taxa(df):
-    pass
+    # df_cp = df
+    # t =2
+    # pass
+    taxa_dict = {}
+    for index, row in df.iterrows():
+        taxa_dict[index] = df.loc[index, 'sequences']
+   # r = 2
+    return taxa_dict
 
 
 #replace the embedding(network) with fixed vector, n>0 and n<1
@@ -148,10 +156,10 @@ def replace_with_fixed_embedding(df,n):
         #embd[str(index)]['embeddings']=fixed_vec
         # r = df[14149]['embeddings']
         df.loc[index, 'embeddings'] = fixed_vec
-        t = 1
-
-    for index, row in df.iterrows():
-        embd = row['embeddings']
+        #t = 1
+    #
+    # for index, row in df.iterrows():
+    #     embd = row['embeddings']
 
 
 # replace the embedding with tree based embeddings
@@ -193,8 +201,10 @@ def load_data(org=None):
     replace_with_fixed_embedding(train_df, 0.1)
     # net_embeddings = train_df['embeddings'].to_frame()
     # ind = net_embeddings.index
-    # arr = net_embeddings.array
+    # arr = net_embeddings.array`
     # vals = net_embeddings.values
+    # get the sequences from the dataframe
+    sq = extract_taxa(df)
     replace_with_fixed_embedding(valid_df,0.1)
 
     replace_with_fixed_embedding(test_df, 0.1)
