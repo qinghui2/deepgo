@@ -7,6 +7,14 @@ python nn_hierarchical_network.py
 import numpy as np
 import pandas as pd
 import click as ck
+import os
+from Bio import SeqIO
+import subprocess
+import pexpect
+import networkx as nx
+import dendropy
+from node2vec import Node2Vec
+
 from keras.models import Sequential, Model, load_model
 from keras.layers import (
     Dense, Dropout, Activation, Input,
@@ -108,7 +116,8 @@ def main(function, device, org, train, param):
             'pool_length': 64,
             'stride': 32
         }
-        model(params, is_train=train)
+        # model(params, is_train=train)
+        model(params, is_train=True)
         # dims = [64, 128, 256, 512]
         # nb_filters = [16, 32, 64, 128]
         # nb_convs = [1, 2, 3, 4]
@@ -120,7 +129,7 @@ def main(function, device, org, train, param):
         #     i /= 4
         #     conv = i % 4
         #     i /= 4
-        #     den = i
+        #     den = i 
         #     params['embedding_dims'] = dims[dim]
         #     params['nb_filter'] = nb_filters[nb_fil]
         #     params['nb_conv'] = nb_convs[conv]
@@ -129,23 +138,181 @@ def main(function, device, org, train, param):
             # print(dims[dim], nb_filters[nb_fil], nb_convs[conv], nb_dense[den], f)
     # performanc_by_interpro()
 
+#extract taxa from dataframe(each taxa is a protein sequence)
+#if the df is train df, return 20179 sequences, for tree reconstruct
+# return a dictionary where key is the id of the protein sequence and value is the protein sequence
+def extract_taxa(df):
+    # df_cp = df
+    # t =2
+    # pass
+    taxa_dict = {}
+    for index, row in df.iterrows():
+        taxa_dict[index] = df.loc[index, 'sequences']
+   # r = 2
+    return taxa_dict
+
+## output edge list of a newick tree for embedding
+#input is the tree file in nwk format
+# output map: map node_id(int) to taxon name for only leaf nodes
+# output edge list: id0 id1 weight
+def convert(input):
+    map = {} # node object -> id
+    parent_map = {} # map of node to its parent
+    len_map = {} #map of edge length between a node and its parent
+    taxon_label_map = {} # if a node is a taxon, map node -> node_label
+    taxon_label_map_inv = {} # if a node is a taxon, map node_label -> node
+    taxa = dendropy.TaxonNamespace() #taxon namespace
+    cur_id = 0
+    out_map_file = open("data/tree_embds/tree_node_mapping.txt","w")
+    # tree = Phylo.read(input, "newick")
+    tree = dendropy.Tree.get(path=input, schema="newick",taxon_namespace=taxa)
+    # a = 2
+    for n in tree.preorder_node_iter():
+        cur_id = cur_id + 1
+        if n.parent_node == None:
+            map[n] = cur_id
+        else:
+            map[n] = cur_id
+            parent_id = map[n.parent_node]
+            parent_map[n] = n.parent_node
+            len_map[n] = n.edge_length
+            if n.is_leaf():
+                # print(n.taxon)
+                taxon_label_map[n] = n.taxon
+                taxon_label_map_inv[str(n.taxon).strip('\'')] = n
+    # write taxon name, taxon id
+    with open("data/tree_embds/taxon_map.txt", "w") as f:
+        for n in taxon_label_map_inv:
+            f.write(n+" "+str(map[taxon_label_map_inv[n]])+"\n")
+        f.close()
+    # write the edge list
+    with open("data/tree_embds/edge_list.txt","w") as f:
+        for n in parent_map:
+            par_id = map[parent_map[n]]
+            cur_id = map[n]
+            len_to_par = len_map[n]*100
+            if(len_to_par <= 0):
+                len_to_par = 1
+            f.write(str(par_id)+" "+str(cur_id)+" "+str(len_to_par)+"\n")
+        f.close()
+    G = nx.read_weighted_edgelist("data/tree_embds/edge_list.txt")
+    c = nx.is_connected(G)
+    b = 2
+    return  G
+
+# given a set of sequences defined by df, generate the multiple sequence alignment
+# df: merged train and test df
+# path_to_alignment: the path to alignment executable
+def get_tree_emb(df,path_to_alignment):
+    # write a fasta file for the input sequences in df
+    print("writting sequence file:")
+    out_f = open("temp_output/sequence_file_concatednated.fasta","w")
+    for k in df:
+        out_f.write(">"+str(k)+"\n")
+        out_f.write(df[k]+"\n")
+    out_f.close()
+    #get msa with clustalomega/muscle
+    print("getting multiple sequence alignment")
+    aln_out_name = "temp/alignment_result.fasta"
+    cmd = "./"+path_to_alignment+" -in "+out_f+" -out "+aln_out_name
+    os.system(cmd)
+    # convert fasta to phylip
+    records = SeqIO.parse(input, "fasta")
+    aln_out_name_phy = "temp/alignment_result.phylip"
+    count = SeqIO.write(records, aln_out_name_phy, "phylip")
+    print("Converted %i records" % count)
+    #get phylogenetic tree from input alignment
+    print("getting phylogenetic tree")
+    c = pexpect.spawn('fastme')
+    c.sendline(aln_out_name_phy)
+    c.sendline('I')
+    c.sendline('P')
+    c.sendline('Y')
+    c.interact()
+    #get node embeddings for leaves of the tree
+    tree_name = "temp/alignment_result_tree.txt"
+    G = convert(tree_name)# get edge list
+    #get node embedding
+    emb_file = "data/tree_embds/edge_list.txt"
+    node2vec = Node2Vec(G, dimensions=64, walk_length=30, num_walks=200, workers=1)
+    model = node2vec.fit(window=10, min_count=1, batch_words=4)
+    model.save("temp/emb.model")
+
+
+#replace the embedding(network) with fixed vector, n>0 and n<1
+def replace_with_fixed_embedding(df,n):
+    # emb_frame = df['embeddings']#.to_frame()
+    # d = 2
+   # pass
+    for index, row in df.iterrows():
+        embd = row['embeddings']
+        fixed_vec = n*np.ones_like(embd)
+        ind = index
+        #embd[str(index)]['embeddings']=fixed_vec
+        # r = df[14149]['embeddings']
+        df.loc[index, 'embeddings'] = fixed_vec
+        #t = 1
+    #
+    # for index, row in df.iterrows():
+    #     embd = row['embeddings']
+
+
+# replace the embedding with tree based embeddings
+def replace_with_tree_based_embedding(df):
+    pass
+
+#replace the embeddings in the dataframe df with random embeddings
+def replace_with_random_embedding(df):
+
+    pass
+
+#replace the embeddings in datafram df with one hot embeddings
+def replace_with_one_hot_embedding(df):
+
+    pass
+
+
 
 def load_data(org=None):
-
+    #size 25224
     df = pd.read_pickle(DATA_ROOT + 'train' + '-' + FUNCTION + '.pkl')
 
     test_df = pd.read_pickle(DATA_ROOT + 'test' + '-' + FUNCTION + '.pkl')
     # df = pd.concat([df, test_df], ignore_index=True)
+
+    df = df.head(1000)
     n = len(df)
     print(n)
     index = df.index.values
     valid_n = int(n * 0.8)
     valid_n_end = int(n*0.9)
-    train_df = df.loc[index[:valid_n]]
-    valid_df = df.loc[index[valid_n:valid_n_end]]
+    #train df, 8 columbns, accessions, gos, labels, ngrams, proteins, sequences, orgs, embeddings
+    train_df = df.loc[index[:valid_n]] # size 20179
+    net_embeddings = train_df['embeddings']#20179*256 network embeddings training set
+    valid_df = df.loc[index[valid_n:valid_n_end]]#size 2522
+    test_df = df.loc[index[valid_n_end:]]#size 2523
+    # replace_with_random_embedding(train_df)
+    # replace_with_random_embedding(valid_df)
+    # replace_with_random_embedding(test_df)
+    ## replace the embeddings in the train df with fixed embeddings, for test
+    replace_with_fixed_embedding(train_df, 0.1)
+    train_taxa = extract_taxa(train_df)
+    all_taxa = extract_taxa(df)
+    #get_tree_emb(all_taxa,"muscle")
+    d = 2
+    # net_embeddings = train_df['embeddings'].to_frame()
+    # ind = net_embeddings.index
+    # arr = net_embeddings.array`
+    # vals = net_embeddings.values
+    # get the sequences from the dataframe
+    sq = extract_taxa(df)
+    replace_with_fixed_embedding(valid_df,0.1)
 
-
-    test_df = df.loc[index[valid_n_end:]]
+    replace_with_fixed_embedding(test_df, 0.1)
+    tr = train_df
+    net_embeddings = train_df['embeddings'].to_frame()
+    vl = valid_df
+    ts = test_df
     if org is not None:
         logging.info('Unfiltered test size: %d' % len(test_df))
         test_df = test_df[test_df['orgs'] == org]
@@ -204,7 +371,7 @@ def get_feature_model(params):
     model.add(MaxPooling1D(
         pool_length=params['pool_length'], stride=params['stride']))
     model.add(Flatten())
-    model.summary()
+    summmary = model.summary()
     return model
 
 
@@ -289,8 +456,8 @@ def get_layers(inputs):
 def get_model(params):
     logging.info("Building the model")
     inputs = Input(shape=(MAXLEN,), dtype='int32', name='input1')
-    inputs2 = Input(shape=(REPLEN,), dtype='float32', name='input2')
-    feature_model = get_feature_model(params)(inputs)
+    inputs2 = Input(shape=(REPLEN,), dtype='float32', name='input2')#network embedding
+    feature_model = get_feature_model(params)(inputs)#embedding layer without network embedding
     net = merge(
         [feature_model, inputs2], mode='concat',
         concat_axis=1, name='merged')
@@ -300,7 +467,7 @@ def get_model(params):
     output_models = []
     for i in range(len(functions)):
         output_models.append(layers[functions[i]]['output'])
-    net = merge(output_models, mode='concat', concat_axis=1)
+    net = merge(output_models, mode='concat', concat_axis=1)#concatenation of inputs1(the mebdding of 3grams) and inputs2(the network embedding)
     # net = Dense(1024, activation='relu')(merged)
     # net = Dense(len(functions), activation='sigmoid')(net)
     model = Model(input=[inputs, inputs2], output=net)
@@ -315,7 +482,7 @@ def get_model(params):
     return model
 
 
-def model(params, batch_size=128, nb_epoch=6, is_train=True):
+def model(params, batch_size=128, nb_epoch=1, is_train=True):
     # set parameters:
     nb_classes = len(functions)
     start_time = time.time()
@@ -331,7 +498,7 @@ def model(params, batch_size=128, nb_epoch=6, is_train=True):
     logging.info("Validation data size: %d" % len(val_data[0]))
     logging.info("Test data size: %d" % len(test_data[0]))
 
-    model_path = (DATA_ROOT + 'models/model_' + FUNCTION + '.h5')
+    model_path = (DATA_ROOT + 'models/model_' + FUNCTION + '.h5') 
                   # '-' + str(params['embedding_dims']) +
                   # '-' + str(params['nb_filter']) +
                   # '-' + str(params['nb_conv']) +
@@ -362,7 +529,7 @@ def model(params, batch_size=128, nb_epoch=6, is_train=True):
             callbacks=[checkpointer, earlystopper])
     logging.info('Loading best model')
     start_time = time.time()
-    model = load_model(model_path)
+    #model = load_model(model_path)
     logging.info('Loading time: %d' % (time.time() - start_time))
     # orgs = ['9606', '10090', '10116', '7227', '7955',
     #         '559292', '3702', '284812', '6239',
