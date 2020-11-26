@@ -13,7 +13,7 @@ import subprocess
 import pexpect
 import networkx as nx
 import dendropy
-from node2vec import Node2Vec
+# from node2vec import Node2Vec
 
 from keras.models import Sequential, Model, load_model
 from keras.layers import (
@@ -129,7 +129,7 @@ def main(function, device, org, train, param):
         #     i /= 4
         #     conv = i % 4
         #     i /= 4
-        #     den = i 
+        #     den = i
         #     params['embedding_dims'] = dims[dim]
         #     params['nb_filter'] = nb_filters[nb_fil]
         #     params['nb_conv'] = nb_convs[conv]
@@ -207,36 +207,49 @@ def get_tree_emb(df,path_to_alignment):
     # write a fasta file for the input sequences in df
     print("writting sequence file:")
     out_f = open("temp_output/sequence_file_concatednated.fasta","w")
+    out_f_name = "temp_output/sequence_file_concatednated.fasta"
     for k in df:
         out_f.write(">"+str(k)+"\n")
         out_f.write(df[k]+"\n")
     out_f.close()
     #get msa with clustalomega/muscle
     print("getting multiple sequence alignment")
-    aln_out_name = "temp/alignment_result.fasta"
-    cmd = "./"+path_to_alignment+" -in "+out_f+" -out "+aln_out_name
+    aln_out_name = "temp_output/alignment_result.fasta"
+    # reference: muscle downloaded from: https://www.drive5.com/muscle/
+    cmd = "./"+path_to_alignment+" -in "+out_f_name+" -out "+aln_out_name+" -maxiters 30"#set iter to 1 for testing
+    print(cmd)
     os.system(cmd)
     # convert fasta to phylip
-    records = SeqIO.parse(input, "fasta")
-    aln_out_name_phy = "temp/alignment_result.phylip"
+    records = SeqIO.parse(aln_out_name, "fasta")
+    aln_out_name_phy = "temp_output/alignment_result.phylip"
     count = SeqIO.write(records, aln_out_name_phy, "phylip")
     print("Converted %i records" % count)
     #get phylogenetic tree from input alignment
     print("getting phylogenetic tree")
+    #get node embeddings for leaves of the tree
+    tree_name = "temp_output/alignment_result.phylip_fastme_tree.txt"
+    stat_name = "temp_output/alignment_result.phylip_fastme_stat.txt"
+    if(os.path.isfile(tree_name)):
+        os.remove(tree_name)
+    if(os.path.isfile(stat_name)):
+        os.remove(stat_name)
+    # reference of fastme: PhyML : "A simple, fast, and accurate algorithm to estimate large phylogenies by maximum likelihood."
+    # code of fastme downloaded from: http://www.atgc-montpellier.fr/fastme/binaries.php
     c = pexpect.spawn('fastme')
     c.sendline(aln_out_name_phy)
     c.sendline('I')
     c.sendline('P')
     c.sendline('Y')
     c.interact()
-    #get node embeddings for leaves of the tree
-    tree_name = "temp/alignment_result_tree.txt"
     G = convert(tree_name)# get edge list
     #get node embedding
     emb_file = "data/tree_embds/edge_list.txt"
+    from node2vec import Node2Vec #import here to test previous
     node2vec = Node2Vec(G, dimensions=64, walk_length=30, num_walks=200, workers=1)
     model = node2vec.fit(window=10, min_count=1, batch_words=4)
-    model.save("temp/emb.model")
+    model.wv.most_similar('2')  # Output node names are always strings
+    model.wv.save_word2vec_format("temp_output/emb.emb")
+    model.save("temp_output/emb.model")
 
 
 #replace the embedding(network) with fixed vector, n>0 and n<1
@@ -276,10 +289,8 @@ def replace_with_one_hot_embedding(df):
 def load_data(org=None):
     #size 25224
     df = pd.read_pickle(DATA_ROOT + 'train' + '-' + FUNCTION + '.pkl')
-
     test_df = pd.read_pickle(DATA_ROOT + 'test' + '-' + FUNCTION + '.pkl')
     # df = pd.concat([df, test_df], ignore_index=True)
-
     df = df.head(1000)
     n = len(df)
     print(n)
@@ -298,7 +309,7 @@ def load_data(org=None):
     replace_with_fixed_embedding(train_df, 0.1)
     train_taxa = extract_taxa(train_df)
     all_taxa = extract_taxa(df)
-    #get_tree_emb(all_taxa,"muscle")
+    get_tree_emb(all_taxa,"../muscle")
     d = 2
     # net_embeddings = train_df['embeddings'].to_frame()
     # ind = net_embeddings.index
@@ -498,7 +509,7 @@ def model(params, batch_size=128, nb_epoch=1, is_train=True):
     logging.info("Validation data size: %d" % len(val_data[0]))
     logging.info("Test data size: %d" % len(test_data[0]))
 
-    model_path = (DATA_ROOT + 'models/model_' + FUNCTION + '.h5') 
+    model_path = (DATA_ROOT + 'models/model_' + FUNCTION + '.h5')
                   # '-' + str(params['embedding_dims']) +
                   # '-' + str(params['nb_filter']) +
                   # '-' + str(params['nb_conv']) +
