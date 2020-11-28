@@ -1,6 +1,14 @@
 from karateclub import DeepWalk
 import networkx as nx
-import dendropy
+import gzip
+
+"""
+THIS FILE IS UNTESTED
+I believe the heterogenous PPI network used to create the network embeddings is the data/graph.mapping.out.gz file.
+It is used to populate the deep_map dictionary. We use the deep_map dictionary to instead create a NetworkX graph
+and run deepwalk on it. The dimensions can be changed if needed.
+"""
+
 
 # load the model
 def deepwalk_embedding(Graph):
@@ -9,35 +17,37 @@ def deepwalk_embedding(Graph):
     embeddings = dw.get_embedding()
     return embeddings
 
-def create_graph(input):
-    map = {} # node object -> id
-    parent_map = {} # map of node to its parent
-    len_map = {} #map of edge length between a node and its parent
-    taxa = dendropy.TaxonNamespace() #taxon namespace
-    cur_id = 0
-    tree = dendropy.Tree.get(path=input, schema="newick",taxon_namespace=taxa)
-    for n in tree.preorder_node_iter():
-        cur_id = cur_id + 1
-        if n.parent_node == None:
-            map[n] = cur_id
-        else:
-            map[n] = cur_id
-            parent_id = map[n.parent_node]
-            parent_map[n] = n.parent_node
-            len_map[n] = n.edge_length
-    # write the edge list
-    with open("data/deepwalk_embds/edge_list.txt","w") as f:
-        for n in parent_map:
-            par_id = map[parent_map[n]]
-            cur_id = map[n]
-            len_to_par = len_map[n]*100
-            if(len_to_par <= 0):
-                len_to_par = 1
-            f.write(str(par_id)+" "+str(cur_id)+" "+str(len_to_par)+"\n")
-        f.close()
-    G = nx.read_weighted_edgelist("data/deepwalk_embds/edge_list.txt")
+def create_graph():
+    # mapping = dict()
+    # with open('data/string2uni.tab') as f:
+    #     for line in f:
+    #         it = line.strip().split('\t')
+    #         mapping[it[0].upper()] = it[1]
+    #
+    # with open('data/string_idmapping.dat') as f:
+    #     for line in f:
+    #         it = line.strip().split('\t')
+    #         mapping[it[2].upper()] = it[0]
+    #
+    # with open('data/uniprot-string.tab') as f:
+    #     for line in f:
+    #         it = line.strip().split('\t')
+    #         mapping[it[1].upper()[:-1]] = it[0]
+
+    deep_map = dict()
+
+    with gzip.open('data/graph.mapping.out.gz') as f:
+        for line in f:
+            it = line.strip().split('\t')
+            deep_map[it[1]] = it[0]
+    G = nx.DiGraph()
+    G.add_nodes_from(deep_map.keys())
+    for k, v in deep_map.items():
+        G.add_edges_from(([(k, t) for t in v]))
     return G
 
-tree_graph = create_graph("data/test_tree.nwk")
-embeddings = deepwalk_embedding(tree_graph)
+
+if __name__ == '__main__':
+    ppi_graph = create_graph()
+    embeddings = deepwalk_embedding(ppi_graph)
 
