@@ -2,7 +2,7 @@ import csv
 import pandas as pd
 from karateclub import DeepWalk
 import networkx as nx
-import gzip
+import numpy as np
 import stringdb
 
 """
@@ -19,46 +19,70 @@ def deepwalk_embedding(Graph):
     G = nx.convert_node_labels_to_integers(Graph)
     dw.fit(G)
     embeddings = dw.get_embedding()
-    print(embeddings)
     return embeddings
 
-def create_graph():
-    deep_map = dict()
+def generate_embeddings():
+    access_map = dict()  # accession -> {}
+    networks_map = dict()
+    df = pd.read_csv('data/df_head_1000.csv')
+    # df = df.head(5)
+    indexes = list(df['index'])
+    for index in indexes:
+        access_map[index] = {}
+    accessions = list(df['accessions'].unique())
+    print("accession list", len(accessions))
+    for idx, accession in enumerate(accessions):
+        # print("idx:", idx, "accession:", accession)
+        index_val = df['index'].iloc[idx]
+        net_df = stringdb.get_network(accession)
 
-    # with gzip.open('data/graph.mapping.out.gz') as f:
-    df = pd.read_csv('data/train-mf.csv')
-    proteins = list(df['proteins'].unique())
-    string_ids = stringdb.get_string_ids(proteins)
-    print(string_ids)
-    network_df = stringdb.get_network(string_ids.queryItem)
-    print(network_df.columns)
-    print(network_df.head(1))
-    for idx in range(len(network_df)):
-        A = network_df['stringId_A'].iloc[idx]
-        B = network_df['stringId_B'].iloc[idx]
-        deep_map[B] = A
+        access_map[index_val]['accession'] = accession
+        networks_map[index_val] = net_df
+        if len(net_df) == 0:
+            # print("zero vector")
+            access_map[index_val]['deepwalk_embedding'] = np.zeros(128)
+        else:
+            # print("net_len:", len(net_df))
+            deep_map = dict()
+            for ix in range(len(net_df)):
+                A = net_df['stringId_A'].iloc[ix]
+                B = net_df['stringId_B'].iloc[ix]
+                deep_map[B] = A
+            G = nx.Graph()
+            G.add_nodes_from(deep_map.keys())
+            for k, v in deep_map.items():
+                G.add_edges_from(([(k, t) for t in v]))
+            embedding = deepwalk_embedding(G)
+            # print(embedding[0].shape)
+            access_map[index_val]['deepwalk_embedding'] = embedding[0]
+    print(len(access_map))
+    full_df = pd.DataFrame.from_dict(access_map, orient='columns').T
+    return full_df
 
-    # tsv_file = open("data/string_interactions.tsv")
-    # read_tsv = csv.reader(tsv_file, delimiter="\t")
-    # print("read tsv")
-    # first = True
-    # for line in read_tsv:
-    #     if first:
-    #         first = False
-    #         continue
-    #     # it = line.strip().split('\t')
-    #     # deep_map[it[1]] = it[0]
-    #     deep_map[line[1]] = line[0]
-    print(deep_map)
+    # string_ids = stringdb.get_string_ids(proteins)
+    # print("string ids", len(string_ids))
 
-    G = nx.Graph()
-    G.add_nodes_from(deep_map.keys())
-    for k, v in deep_map.items():
-        G.add_edges_from(([(k, t) for t in v]))
-    return G
+    # network_df = stringdb.get_network(accessions)
+    # print(network_df.columns)
+    # print(len(network_df))
+    # for idx in range(len(network_df)):
+    #     A = network_df['stringId_A'].iloc[idx]
+    #     B = network_df['stringId_B'].iloc[idx]
+    #     deep_map[B] = A
+    #
+    # print(len(deep_map))
+    # G = nx.Graph()
+    # G.add_nodes_from(deep_map.keys())
+    # for k, v in deep_map.items():
+    #     G.add_edges_from(([(k, t) for t in v]))
+    # return G
 
 
 if __name__ == '__main__':
-    ppi_graph = create_graph()
-    embeddings = deepwalk_embedding(ppi_graph)
+    embeddings_df = generate_embeddings()
+    embeddings_df.to_csv('deepwalk_embeddings.csv')
+    # embeddings = deepwalk_embedding(ppi_graph)
+    # with open("deepwalk_embeddings.csv", "w", newline="") as f:
+    #     writer = csv.writer(f)
+    #     writer.writerows(embeddings)
 
