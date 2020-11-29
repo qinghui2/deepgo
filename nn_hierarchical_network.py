@@ -215,10 +215,13 @@ def get_tree_emb(df,path_to_alignment):
     #get msa with clustalomega/muscle
     print("getting multiple sequence alignment")
     aln_out_name = "temp_output/alignment_result.fasta"
-    # reference: muscle downloaded from: https://www.drive5.com/muscle/
-    cmd = "./"+path_to_alignment+" -in "+out_f_name+" -out "+aln_out_name+" -maxiters 30"#set iter to 1 for testing
+    # if(not os.path.isfile(aln_out_name)):
+        # reference: muscle downloaded from: https://www.drive5.com/muscle/
+    cmd = "./"+path_to_alignment+" -in "+out_f_name+" -out "+aln_out_name+" -maxiters 3"#set iter to 1 for testing
     print(cmd)
     os.system(cmd)
+    # else:
+    #     print("there is existing alignment, using cached")
     # convert fasta to phylip
     records = SeqIO.parse(aln_out_name, "fasta")
     aln_out_name_phy = "temp_output/alignment_result.phylip"
@@ -227,8 +230,10 @@ def get_tree_emb(df,path_to_alignment):
     #get phylogenetic tree from input alignment
     print("getting phylogenetic tree")
     #get node embeddings for leaves of the tree
+
     tree_name = "temp_output/alignment_result.phylip_fastme_tree.txt"
     stat_name = "temp_output/alignment_result.phylip_fastme_stat.txt"
+    # if(True or not os.path.isfile(tree_name)):
     if(os.path.isfile(tree_name)):
         os.remove(tree_name)
     if(os.path.isfile(stat_name)):
@@ -242,10 +247,13 @@ def get_tree_emb(df,path_to_alignment):
     c.sendline('Y')
     c.interact()
     G = convert(tree_name)# get edge list
+    # else:
+    #     G = convert(tree_name)  # get edge list
+    #     print("there is already tree file, using cached")
     #get node embedding
     emb_file = "data/tree_embds/edge_list.txt"
     from node2vec import Node2Vec #import here to test previous
-    node2vec = Node2Vec(G, dimensions=64, walk_length=30, num_walks=200, workers=1)
+    node2vec = Node2Vec(G, dimensions=128, walk_length=30, num_walks=200, workers=1)
     model = node2vec.fit(window=10, min_count=1, batch_words=4)
     model.wv.most_similar('2')  # Output node names are always strings
     model.wv.save_word2vec_format("temp_output/emb.emb")
@@ -271,20 +279,44 @@ def replace_with_fixed_embedding(df,n):
 
 
 # replace the embedding with tree based embeddings
+# the input embedding file should be in format id, emb, ...
 def replace_with_tree_based_embedding(df):
-    pass
+    # pass
+    emb_f_name = "temp_output/emb.emb"
+    emb_file = open(emb_f_name,"r")
+    # read mapping
+    emb_mapping = dict()
 
-#replace the embeddings in the dataframe df with random embeddings
-def replace_with_random_embedding(df):
-
-    pass
-
-#replace the embeddings in datafram df with one hot embeddings
-def replace_with_one_hot_embedding(df):
-
-    pass
-
-
+    for line in emb_file.readlines():
+        # c = line
+        l_arr = line.split(" ")
+        node_id, emb = l_arr[0], l_arr[1:]
+        d = 2
+        emb = list(map(float, emb))
+        emb_mapping[node_id] = emb
+    # z = emb_mapping['8']
+    # z1 = emb_mapping['12']
+    # z2 = emb_mapping['14']
+    # z3 = emb_mapping['15']
+    # map the embedding mapping back to original id
+    taxon_mapping = open("data/tree_embds/taxon_map.txt","r")
+    true_emb_mapping = dict()
+    s = taxon_mapping.readlines()
+    for k in s:
+        orig, mapped = k.split(" ")[0], k.split(" ")[1].rstrip()
+        true_emb_mapping[orig] = emb_mapping[mapped]
+    z1 = true_emb_mapping['14149']
+    z2 = true_emb_mapping['3127']
+    z3 = true_emb_mapping['26305']
+    z4 = true_emb_mapping['21094']
+    # replace the embedding with tree embedding in df
+    for index, row in df.iterrows():
+        embd = row['embeddings']
+        ind = index
+        # r = df[14149]['embeddings']
+        tree_emb_ind = true_emb_mapping[str(ind)]
+        df.loc[index, 'embeddings'] = tree_emb_ind
+    t = 2
 
 def load_data(org=None):
     #size 25224
@@ -306,10 +338,11 @@ def load_data(org=None):
     # replace_with_random_embedding(valid_df)
     # replace_with_random_embedding(test_df)
     ## replace the embeddings in the train df with fixed embeddings, for test
-    replace_with_fixed_embedding(train_df, 0.1)
+    # replace_with_fixed_embedding(df, 0.1)
     train_taxa = extract_taxa(train_df)
     all_taxa = extract_taxa(df)
-    get_tree_emb(all_taxa,"../muscle")
+    # get_tree_emb(all_taxa,"../muscle")
+    # replace_with_tree_based_embedding(df)
     d = 2
     # net_embeddings = train_df['embeddings'].to_frame()
     # ind = net_embeddings.index
@@ -317,9 +350,9 @@ def load_data(org=None):
     # vals = net_embeddings.values
     # get the sequences from the dataframe
     sq = extract_taxa(df)
-    replace_with_fixed_embedding(valid_df,0.1)
+    # replace_with_fixed_embedding(df,0.1)
 
-    replace_with_fixed_embedding(test_df, 0.1)
+    # replace_with_fixed_embedding(test_df, 0.1)
     tr = train_df
     net_embeddings = train_df['embeddings'].to_frame()
     vl = valid_df
@@ -493,7 +526,7 @@ def get_model(params):
     return model
 
 
-def model(params, batch_size=128, nb_epoch=1, is_train=True):
+def model(params, batch_size=128, nb_epoch=10, is_train=True):
     # set parameters:
     nb_classes = len(functions)
     start_time = time.time()
