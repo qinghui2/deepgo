@@ -1,43 +1,64 @@
+import csv
+import pandas as pd
 from karateclub import DeepWalk
 import networkx as nx
-import dendropy
+import gzip
+import stringdb
+
+"""
+THIS FILE IS UNTESTED
+I believe the heterogenous PPI network used to create the network embeddings is the data/graph.mapping.out.gz file.
+It is used to populate the deep_map dictionary. We use the deep_map dictionary to instead create a NetworkX graph
+and run deepwalk on it. The dimensions can be changed if needed.
+"""
+
 
 # load the model
 def deepwalk_embedding(Graph):
     dw = DeepWalk(dimensions=128)
-    dw.fit(Graph)
+    G = nx.convert_node_labels_to_integers(Graph)
+    dw.fit(G)
     embeddings = dw.get_embedding()
+    print(embeddings)
     return embeddings
 
-def create_graph(input):
-    map = {} # node object -> id
-    parent_map = {} # map of node to its parent
-    len_map = {} #map of edge length between a node and its parent
-    taxa = dendropy.TaxonNamespace() #taxon namespace
-    cur_id = 0
-    tree = dendropy.Tree.get(path=input, schema="newick",taxon_namespace=taxa)
-    for n in tree.preorder_node_iter():
-        cur_id = cur_id + 1
-        if n.parent_node == None:
-            map[n] = cur_id
-        else:
-            map[n] = cur_id
-            parent_id = map[n.parent_node]
-            parent_map[n] = n.parent_node
-            len_map[n] = n.edge_length
-    # write the edge list
-    with open("data/deepwalk_embds/edge_list.txt","w") as f:
-        for n in parent_map:
-            par_id = map[parent_map[n]]
-            cur_id = map[n]
-            len_to_par = len_map[n]*100
-            if(len_to_par <= 0):
-                len_to_par = 1
-            f.write(str(par_id)+" "+str(cur_id)+" "+str(len_to_par)+"\n")
-        f.close()
-    G = nx.read_weighted_edgelist("data/deepwalk_embds/edge_list.txt")
+def create_graph():
+    deep_map = dict()
+
+    # with gzip.open('data/graph.mapping.out.gz') as f:
+    df = pd.read_csv('data/train-mf.csv')
+    proteins = list(df['proteins'].unique())
+    string_ids = stringdb.get_string_ids(proteins)
+    print(string_ids)
+    network_df = stringdb.get_network(string_ids.queryItem)
+    print(network_df.columns)
+    print(network_df.head(1))
+    for idx in range(len(network_df)):
+        A = network_df['stringId_A'].iloc[idx]
+        B = network_df['stringId_B'].iloc[idx]
+        deep_map[B] = A
+
+    # tsv_file = open("data/string_interactions.tsv")
+    # read_tsv = csv.reader(tsv_file, delimiter="\t")
+    # print("read tsv")
+    # first = True
+    # for line in read_tsv:
+    #     if first:
+    #         first = False
+    #         continue
+    #     # it = line.strip().split('\t')
+    #     # deep_map[it[1]] = it[0]
+    #     deep_map[line[1]] = line[0]
+    print(deep_map)
+
+    G = nx.Graph()
+    G.add_nodes_from(deep_map.keys())
+    for k, v in deep_map.items():
+        G.add_edges_from(([(k, t) for t in v]))
     return G
 
-tree_graph = create_graph("data/test_tree.nwk")
-embeddings = deepwalk_embedding(tree_graph)
+
+if __name__ == '__main__':
+    ppi_graph = create_graph()
+    embeddings = deepwalk_embedding(ppi_graph)
 
