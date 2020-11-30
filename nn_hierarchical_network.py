@@ -13,6 +13,8 @@ import subprocess
 import pexpect
 import networkx as nx
 import dendropy
+from sklearn.utils import shuffle
+from shutil import copyfile
 # from node2vec import Node2Vec
 
 from keras.models import Sequential, Model, load_model
@@ -78,7 +80,35 @@ ind = 0
     help='Organism id for filtering test set')
 @ck.option('--train', is_flag=True)
 @ck.option('--param', default=0, help='Param index 0-7')
-def main(function, device, org, train, param):
+@ck.option(
+    '--evomodel',
+    help='protein evolution model, P-dist(P), F81-like(F), LG(L), Default(D) ',
+    default = 'default'
+)
+@ck.option(
+    '--buildmethod',
+    help = 'TaxAdd_BalME(B), TaxAdd_OLSME(O), BIONJ(I), NJ(N), Default(D)',
+    default = 'default'
+)
+@ck.option(
+    '--shuffleseed',
+    default = 0,
+    help = 'shuffle seed of permuting the dataframe, a shuffle seed 0 means no shuffle'
+)
+@ck.option(
+    '--embeddingmethod',
+    help = 'original network embedding(net), tree based embedding(tree), deepwalk embedding(deep), fixed embedding all initialized to 0.1(fix)',
+    default = 'net'
+)
+def main(function, device, org, train, param,embeddingmethod, shuffleseed,buildmethod, evomodel):
+    global BUILDMETHOD
+    BUILDMETHOD = buildmethod
+    global EVOMODEL
+    EVOMODEL = evomodel
+    global EMBEDDINGMETHOD
+    EMBEDDINGMETHOD = embeddingmethod
+    global SEED
+    SEED = shuffleseed
     global FUNCTION
     FUNCTION = function
     global GO_ID
@@ -94,7 +124,14 @@ def main(function, device, org, train, param):
     func_set = set(functions)
     global all_functions
     all_functions = get_go_set(go, GO_ID)
+    global experiment_id
+    experiment_id = str(function)+'-'+str(embeddingmethod)+'-'+str(shuffleseed)+'-'+str(buildmethod)+'-'+str(evomodel)
     logging.info('Functions: %s %d' % (FUNCTION, len(functions)))
+    a = experiment_id
+    global resdir
+    resdir = "results/"+experiment_id
+    if not os.path.isdir(resdir):
+        os.mkdir(resdir)
     if ORG is not None:
         logging.info('Organism %s' % ORG)
     global go_indexes
@@ -129,7 +166,7 @@ def main(function, device, org, train, param):
         #     i /= 4
         #     conv = i % 4
         #     i /= 4
-        #     den = i
+        #     den = i 
         #     params['embedding_dims'] = dims[dim]
         #     params['nb_filter'] = nb_filters[nb_fil]
         #     params['nb_conv'] = nb_convs[conv]
@@ -156,6 +193,9 @@ def extract_taxa(df):
 # output map: map node_id(int) to taxon name for only leaf nodes
 # output edge list: id0 id1 weight
 def convert(input):
+    tree_res_dir = resdir+"/tree_embeddings"
+    if(not os.path.isdir(tree_res_dir)):
+        os.mkdir(tree_res_dir)
     map = {} # node object -> id
     parent_map = {} # map of node to its parent
     len_map = {} #map of edge length between a node and its parent
@@ -185,6 +225,7 @@ def convert(input):
         for n in taxon_label_map_inv:
             f.write(n+" "+str(map[taxon_label_map_inv[n]])+"\n")
         f.close()
+    copyfile("data/tree_embds/taxon_map.txt",tree_res_dir+"/taxon_mapping.txt")
     # write the edge list
     with open("data/tree_embds/edge_list.txt","w") as f:
         for n in parent_map:
@@ -195,6 +236,7 @@ def convert(input):
                 len_to_par = 1
             f.write(str(par_id)+" "+str(cur_id)+" "+str(len_to_par)+"\n")
         f.close()
+    copyfile("data/tree_embds/edge_list.txt",tree_res_dir+"/edge_list.txt")
     G = nx.read_weighted_edgelist("data/tree_embds/edge_list.txt")
     c = nx.is_connected(G)
     b = 2
@@ -204,6 +246,12 @@ def convert(input):
 # df: merged train and test df
 # path_to_alignment: the path to alignment executable
 def get_tree_emb(df,path_to_alignment):
+    tree_res_dir = resdir + "/tree_embeddings"
+    if(not os.path.isdir(tree_res_dir)):
+        os.mkdir(tree_res_dir)
+    msa_path = tree_res_dir+"/msa"
+    if(not os.path.isdir(msa_path)):
+        os.mkdir(msa_path)
     # write a fasta file for the input sequences in df
     print("writting sequence file:")
     out_f = open("temp_output/sequence_file_concatednated.fasta","w")
@@ -216,10 +264,13 @@ def get_tree_emb(df,path_to_alignment):
     print("getting multiple sequence alignment")
     aln_out_name = "temp_output/alignment_result.fasta"
     # if(not os.path.isfile(aln_out_name)):
-        # reference: muscle downloaded from: https://www.drive5.com/muscle/
+    # reference: muscle downloaded from: https://www.drive5.com/muscle/
+    # muscle reference: Edgar RC. MUSCLE: multiple sequence alignment with high accuracy and high throughput. Nucleic Acids Res. 2004 Mar 19;32(5):1792-7. doi: 10.1093/nar/gkh340. PMID: 15034147; PMCID: PMC390337.
     cmd = "./"+path_to_alignment+" -in "+out_f_name+" -out "+aln_out_name+" -maxiters 3"#set iter to 1 for testing
     print(cmd)
     os.system(cmd)
+    copyfile(aln_out_name, msa_path+"/msa_result.fasta")
+    copyfile(out_f_name,msa_path+"/msa_in.fasta")
     # else:
     #     print("there is existing alignment, using cached")
     # convert fasta to phylip
@@ -240,13 +291,30 @@ def get_tree_emb(df,path_to_alignment):
         os.remove(stat_name)
     # reference of fastme: PhyML : "A simple, fast, and accurate algorithm to estimate large phylogenies by maximum likelihood."
     # code of fastme downloaded from: http://www.atgc-montpellier.fr/fastme/binaries.php
+    # using pexpect to spawn fastme was referenced from https://github.com/c5shen/CS581HW3/blob/master/FastME-TaxAdd_BalME/pipeline_fastme.py
+    # and https://github.com/c5shen/CS581HW3/blob/master/NJ/pipeline_nj.py
     c = pexpect.spawn('fastme')
     c.sendline(aln_out_name_phy)
     c.sendline('I')
     c.sendline('P')
+    # BUILDMETHOD = buildmethod
+    # global EVOMODEL
+    # EVOMODEL = evomodel
+    if(EVOMODEL!="D"):
+        c.sendline("E")
+        c.sendline(EVOMODEL)
+        print("evolution model", EVOMODEL)
+    if(BUILDMETHOD!="D"):
+        c.sendline("M")
+        c.sendline(BUILDMETHOD)
     c.sendline('Y')
     c.interact()
     G = convert(tree_name)# get edge list
+    tree_dir = tree_res_dir+"/tree"
+    if(not os.path.isdir(tree_dir)):
+        os.mkdir(tree_dir)
+    copyfile(tree_name, tree_dir+"/tree.txt")
+    copyfile(stat_name,tree_dir+"/stat.txt")
     # else:
     #     G = convert(tree_name)  # get edge list
     #     print("there is already tree file, using cached")
@@ -258,6 +326,11 @@ def get_tree_emb(df,path_to_alignment):
     model.wv.most_similar('2')  # Output node names are always strings
     model.wv.save_word2vec_format("temp_output/emb.emb")
     model.save("temp_output/emb.model")
+    tree_node_emb_dir = tree_res_dir+"/tree_node_embedding"
+    if(not os.path.isdir(tree_node_emb_dir)):
+        os.mkdir(tree_node_emb_dir)
+    copyfile("temp_output/emb.emb",tree_node_emb_dir+"/emb.emb")
+    copyfile("temp_output/emb.model",tree_node_emb_dir+"/emb.model")
 
 
 #replace the embedding(network) with fixed vector, n>0 and n<1
@@ -276,6 +349,7 @@ def replace_with_fixed_embedding(df,n):
     #
     # for index, row in df.iterrows():
     #     embd = row['embeddings']
+
 
 
 # replace the embedding with tree based embeddings
@@ -305,10 +379,10 @@ def replace_with_tree_based_embedding(df):
     for k in s:
         orig, mapped = k.split(" ")[0], k.split(" ")[1].rstrip()
         true_emb_mapping[orig] = emb_mapping[mapped]
-    z1 = true_emb_mapping['14149']
-    z2 = true_emb_mapping['3127']
-    z3 = true_emb_mapping['26305']
-    z4 = true_emb_mapping['21094']
+    # z1 = true_emb_mapping['14149']
+    # z2 = true_emb_mapping['3127']
+    # z3 = true_emb_mapping['26305']
+    # z4 = true_emb_mapping['21094']
     # replace the embedding with tree embedding in df
     for index, row in df.iterrows():
         embd = row['embeddings']
@@ -319,10 +393,18 @@ def replace_with_tree_based_embedding(df):
     t = 2
 
 def load_data(org=None):
+    # FUNCTION ="bp"
     #size 25224
     df = pd.read_pickle(DATA_ROOT + 'train' + '-' + FUNCTION + '.pkl')
     test_df = pd.read_pickle(DATA_ROOT + 'test' + '-' + FUNCTION + '.pkl')
     # df = pd.concat([df, test_df], ignore_index=True)
+    # df = shuffle(df,random_state=20)
+    if(int(SEED)!=0):
+        logging.info("shuffling with seed")
+        print(int(SEED))
+        df = shuffle(df,random_state=int(SEED))
+    else:
+        logging.info("not shuffinling data")
     df = df.head(1000)
     n = len(df)
     print(n)
@@ -331,28 +413,29 @@ def load_data(org=None):
     valid_n_end = int(n*0.9)
     #train df, 8 columbns, accessions, gos, labels, ngrams, proteins, sequences, orgs, embeddings
     train_df = df.loc[index[:valid_n]] # size 20179
-    net_embeddings = train_df['embeddings']#20179*256 network embeddings training set
+    # net_embeddings = train_df['embeddings']#20179*256 network embeddings training set
     valid_df = df.loc[index[valid_n:valid_n_end]]#size 2522
     test_df = df.loc[index[valid_n_end:]]#size 2523
+    file_archive = resdir+"/train_and_test_data"
+    if not os.path.isdir(file_archive):
+        os.mkdir(file_archive)
+    train_df.to_csv(file_archive+"/train_df.csv")
+    valid_df.to_csv(file_archive+"/valid_df.csv")
+    test_df.to_csv(file_archive+"/test_df.csv")
     # replace_with_random_embedding(train_df)
     # replace_with_random_embedding(valid_df)
     # replace_with_random_embedding(test_df)
     ## replace the embeddings in the train df with fixed embeddings, for test
     # replace_with_fixed_embedding(df, 0.1)
     train_taxa = extract_taxa(train_df)
-    all_taxa = extract_taxa(df)
-    # get_tree_emb(all_taxa,"../muscle")
-    # replace_with_tree_based_embedding(df)
-    d = 2
-    # net_embeddings = train_df['embeddings'].to_frame()
-    # ind = net_embeddings.index
-    # arr = net_embeddings.array`
-    # vals = net_embeddings.values
+    if(EMBEDDINGMETHOD == 'tree'):
+        all_taxa = extract_taxa(df)
+        get_tree_emb(all_taxa,"../muscle")
+        replace_with_tree_based_embedding(df)
+    if(EMBEDDINGMETHOD == 'fixed'):
+        replace_with_fixed_embedding(df, 0.1)
     # get the sequences from the dataframe
     sq = extract_taxa(df)
-    # replace_with_fixed_embedding(df,0.1)
-
-    # replace_with_fixed_embedding(test_df, 0.1)
     tr = train_df
     net_embeddings = train_df['embeddings'].to_frame()
     vl = valid_df
@@ -526,7 +609,7 @@ def get_model(params):
     return model
 
 
-def model(params, batch_size=128, nb_epoch=10, is_train=True):
+def model(params, batch_size=128, nb_epoch=6, is_train=True):
     # set parameters:
     nb_classes = len(functions)
     start_time = time.time()
@@ -542,7 +625,7 @@ def model(params, batch_size=128, nb_epoch=10, is_train=True):
     logging.info("Validation data size: %d" % len(val_data[0]))
     logging.info("Test data size: %d" % len(test_data[0]))
 
-    model_path = (DATA_ROOT + 'models/model_' + FUNCTION + '.h5')
+    model_path = (DATA_ROOT + 'models/model_' + FUNCTION + '.h5') 
                   # '-' + str(params['embedding_dims']) +
                   # '-' + str(params['nb_filter']) +
                   # '-' + str(params['nb_conv']) +
@@ -573,6 +656,11 @@ def model(params, batch_size=128, nb_epoch=10, is_train=True):
             callbacks=[checkpointer, earlystopper])
     logging.info('Loading best model')
     start_time = time.time()
+    model_dir = resdir+"/model"
+    if(not os.path.isdir(resdir+"/model")):
+        os.mkdir(model_dir)
+        copyfile(DATA_ROOT + 'models/model_' + FUNCTION + '.h5',model_dir+"/model.h5")
+
     #model = load_model(model_path)
     logging.info('Loading time: %d' % (time.time() - start_time))
     # orgs = ['9606', '10090', '10116', '7227', '7955',
@@ -599,6 +687,14 @@ def model(params, batch_size=128, nb_epoch=10, is_train=True):
     logging.info('MCC: \t %f ' % (mcc, ))
     print(('%.3f & %.3f & %.3f & %.3f & %.3f' % (
         f, p, r, roc_auc, mcc)))
+    eval_dir = resdir + '/evaluation'
+    if (not os.path.isdir(eval_dir)):
+        os.mkdir(eval_dir)
+    res_f = open(eval_dir + "/result.txt", "w")
+    res_f.write('Fmax measure: \t %f %f %f %f\n' % (f, p, r, t))
+    res_f.write('ROC AUC: \t %f \n' % (roc_auc, ))
+    res_f.write('MCC: \t %f \n' % (mcc, ))
+    res_f.close()
     # return f
     # logging.info('Inconsistent predictions: %d' % incon)
     # logging.info('Saving the predictions')
@@ -717,6 +813,15 @@ def function_centric_performance(functions, preds, labels):
                 r_max = recall
         num_prots = np.sum(labels[i, :])
         roc_auc = auc(x, y)
+        eval_dir = resdir +'evaluation'
+        if(not os.path.isdir(eval_dir)):
+            os.mkdir(eval_dir)
+        f = open(eval_dir+"/result.txt","w")
+        #write evaluation result
+        f.write("functions[i], f_max, p_max, r_max, num_prots, roc_auc\n")
+        f.write('%s %f %f %f %d %f' % (
+            functions[i], f_max, p_max, r_max, num_prots, roc_auc))
+        f.close()
         print(('%s %f %f %f %d %f' % (
             functions[i], f_max, p_max, r_max, num_prots, roc_auc)))
 
