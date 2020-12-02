@@ -174,7 +174,7 @@ def main(function, device, org, train, param,embeddingmethod, shuffleseed,buildm
             # f = model(params, is_train=train)
             # print(dims[dim], nb_filters[nb_fil], nb_convs[conv], nb_dense[den], f)
     # performanc_by_interpro()
-
+#Author: Qinghui Zhou
 #extract taxa from dataframe(each taxa is a protein sequence)
 #if the df is train df, return 20179 sequences, for tree reconstruct
 # return a dictionary where key is the id of the protein sequence and value is the protein sequence
@@ -187,7 +187,7 @@ def extract_taxa(df):
         taxa_dict[index] = df.loc[index, 'sequences']
    # r = 2
     return taxa_dict
-
+#author:Qinghui Zhou
 ## output edge list of a newick tree for embedding
 #input is the tree file in nwk format
 # output map: map node_id(int) to taxon name for only leaf nodes
@@ -241,7 +241,7 @@ def convert(input):
     c = nx.is_connected(G)
     b = 2
     return  G
-
+#Author: Qinghui Zhou
 # given a set of sequences defined by df, generate the multiple sequence alignment
 # df: merged train and test df
 # path_to_alignment: the path to alignment executable
@@ -332,7 +332,7 @@ def get_tree_emb(df,path_to_alignment):
     copyfile("temp_output/emb.emb",tree_node_emb_dir+"/emb.emb")
     copyfile("temp_output/emb.model",tree_node_emb_dir+"/emb.model")
 
-
+#Author: Qinghui Zhou
 #replace the embedding(network) with fixed vector, n>0 and n<1
 def replace_with_fixed_embedding(df,n):
     # emb_frame = df['embeddings']#.to_frame()
@@ -346,18 +346,20 @@ def replace_with_fixed_embedding(df,n):
         # r = df[14149]['embeddings']
         df.loc[index, 'embeddings'] = fixed_vec
         #t = 1
+    return df
     #
     # for index, row in df.iterrows():
     #     embd = row['embeddings']
 
 
-
+#Author: Qinghui Zhou
 # replace the embedding with tree based embeddings
 # the input embedding file should be in format id, emb, ...
 def replace_with_tree_based_embedding(df):
     # pass
     emb_f_name = "temp_output/emb.emb"
     emb_file = open(emb_f_name,"r")
+    next(emb_file)
     # read mapping
     emb_mapping = dict()
 
@@ -384,6 +386,7 @@ def replace_with_tree_based_embedding(df):
     # z3 = true_emb_mapping['26305']
     # z4 = true_emb_mapping['21094']
     # replace the embedding with tree embedding in df
+    c =1
     for index, row in df.iterrows():
         embd = row['embeddings']
         ind = index
@@ -391,6 +394,8 @@ def replace_with_tree_based_embedding(df):
         tree_emb_ind = true_emb_mapping[str(ind)]
         df.loc[index, 'embeddings'] = tree_emb_ind
     t = 2
+    return df
+
 
 def load_data(org=None):
     # FUNCTION ="bp"
@@ -431,13 +436,14 @@ def load_data(org=None):
     if(EMBEDDINGMETHOD == 'tree'):
         all_taxa = extract_taxa(df)
         get_tree_emb(all_taxa,"../muscle")
-        replace_with_tree_based_embedding(df)
+        df = replace_with_tree_based_embedding(df)
     if(EMBEDDINGMETHOD == 'fixed'):
-        replace_with_fixed_embedding(df, 0.1)
+        df = replace_with_fixed_embedding(df, 0.1)
     # get the sequences from the dataframe
     sq = extract_taxa(df)
     tr = train_df
     net_embeddings = train_df['embeddings'].to_frame()
+    print(net_embeddings)
     vl = valid_df
     ts = test_df
     if org is not None:
