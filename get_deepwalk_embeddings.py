@@ -15,7 +15,7 @@ and run deepwalk on it. The dimensions can be changed if needed.
 
 # load the model
 def deepwalk_embedding(Graph):
-    dw = DeepWalk(dimensions=128)
+    dw = DeepWalk(dimensions=256)
     G = nx.convert_node_labels_to_integers(Graph)
     dw.fit(G)
     embeddings = dw.get_embedding()
@@ -31,6 +31,9 @@ def generate_embeddings():
         access_map[index] = {}
     accessions = list(df['accessions'].unique())
     print("accession list", len(accessions))
+
+    ct_zeroes = 0
+    ct_deepwalk = 0
     for idx, accession in enumerate(accessions):
         # print("idx:", idx, "accession:", accession)
         index_val = df['index'].iloc[idx]
@@ -40,7 +43,8 @@ def generate_embeddings():
         networks_map[index_val] = net_df
         if len(net_df) == 0:
             # print("zero vector")
-            access_map[index_val]['deepwalk_embedding'] = np.zeros(128)
+            ct_zeroes += 1
+            access_map[index_val]['deepwalk_embedding'] = np.zeros(256)
         else:
             # print("net_len:", len(net_df))
             deep_map = dict()
@@ -54,8 +58,11 @@ def generate_embeddings():
                 G.add_edges_from(([(k, t) for t in v]))
             embedding = deepwalk_embedding(G)
             # print(embedding[0].shape)
+            ct_deepwalk += 1
             access_map[index_val]['deepwalk_embedding'] = embedding[0]
     print(len(access_map))
+    print("zeroes:", ct_zeroes)
+    print("deepwalk:", ct_deepwalk)
     full_df = pd.DataFrame.from_dict(access_map, orient='columns').T
     return full_df
 
