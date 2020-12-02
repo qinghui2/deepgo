@@ -321,7 +321,7 @@ def get_tree_emb(df,path_to_alignment):
     #get node embedding
     emb_file = "data/tree_embds/edge_list.txt"
     from node2vec import Node2Vec #import here to test previous
-    node2vec = Node2Vec(G, dimensions=128, walk_length=30, num_walks=200, workers=1)
+    node2vec = Node2Vec(G, dimensions=256, walk_length=30, num_walks=200, workers=1)
     model = node2vec.fit(window=10, min_count=1, batch_words=4)
     model.wv.most_similar('2')  # Output node names are always strings
     model.wv.save_word2vec_format("temp_output/emb.emb")
@@ -389,7 +389,9 @@ def replace_with_tree_based_embedding(df):
     c =1
     for index, row in df.iterrows():
         embd = row['embeddings']
+
         ind = index
+        fixed_vec = np.ones_like(embd)
         # r = df[14149]['embeddings']
         tree_emb_ind = true_emb_mapping[str(ind)]
         df.loc[index, 'embeddings'] = tree_emb_ind
@@ -411,6 +413,12 @@ def load_data(org=None):
     else:
         logging.info("not shuffinling data")
     df = df.head(1000)
+    if(EMBEDDINGMETHOD == 'tree'):
+        all_taxa = extract_taxa(df)
+        get_tree_emb(all_taxa,"../muscle")
+        df = replace_with_tree_based_embedding(df)
+    if(EMBEDDINGMETHOD == 'fixed'):
+        df = replace_with_fixed_embedding(df, 0.1)
     n = len(df)
     print(n)
     index = df.index.values
@@ -427,18 +435,7 @@ def load_data(org=None):
     train_df.to_csv(file_archive+"/train_df.csv")
     valid_df.to_csv(file_archive+"/valid_df.csv")
     test_df.to_csv(file_archive+"/test_df.csv")
-    # replace_with_random_embedding(train_df)
-    # replace_with_random_embedding(valid_df)
-    # replace_with_random_embedding(test_df)
-    ## replace the embeddings in the train df with fixed embeddings, for test
-    # replace_with_fixed_embedding(df, 0.1)
     train_taxa = extract_taxa(train_df)
-    if(EMBEDDINGMETHOD == 'tree'):
-        all_taxa = extract_taxa(df)
-        get_tree_emb(all_taxa,"../muscle")
-        df = replace_with_tree_based_embedding(df)
-    if(EMBEDDINGMETHOD == 'fixed'):
-        df = replace_with_fixed_embedding(df, 0.1)
     # get the sequences from the dataframe
     sq = extract_taxa(df)
     tr = train_df
