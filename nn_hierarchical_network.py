@@ -398,6 +398,17 @@ def replace_with_tree_based_embedding(df):
     t = 2
     return df
 
+"""
+@Author: Sejal K. Parmar
+replace embedding with deepwalk embeddings
+"""
+def replace_with_deepwalk_embeddings(df):
+    embedding_df = pd.read_csv('deepwalk_embeddings.csv')
+    df.embeddings = embedding_df.deepwalk_embedding
+    return df
+
+
+
 
 def load_data(org=None):
     # FUNCTION ="bp"
