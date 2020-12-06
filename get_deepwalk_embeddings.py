@@ -21,7 +21,10 @@ def deepwalk_embedding(Graph):
     embeddings = dw.get_embedding()
     return embeddings
 
-def generate_embeddings(df):
+def generate_embeddings(input):
+    print('GENERATING DEEPWALK EMBEDDINGS')
+    df = input.copy()
+    df['index'] = df.index.values
     access_map = dict()  # accession -> {}
     networks_map = dict()
     # df = df.head(5)
@@ -29,7 +32,7 @@ def generate_embeddings(df):
     for index in indexes:
         access_map[index] = {}
     accessions = list(df['accessions'].unique())
-    print("accession list", len(accessions))
+    print("accession list len", len(accessions))
 
     ct_zeroes = 0
     ct_deepwalk = 0
@@ -59,7 +62,7 @@ def generate_embeddings(df):
             # print(embedding[0].shape)
             ct_deepwalk += 1
             access_map[index_val]['deepwalk_embedding'] = embedding[0]
-    print(len(access_map))
+    print("access_map len", len(access_map))
     print("zeroes:", ct_zeroes)
     print("deepwalk:", ct_deepwalk)
     full_df = pd.DataFrame.from_dict(access_map, orient='columns').T
@@ -86,6 +89,8 @@ def generate_embeddings(df):
 
 # if __name__ == '__main__':
 #     df = pd.read_csv('data/df_head_1000.csv')
+#     df = df.head(5)
+#     print(df)
 #     embeddings_df = generate_embeddings(df)
 #     embeddings_df.to_csv('deepwalk_embeddings.csv')
     # embeddings = deepwalk_embedding(ppi_graph)
