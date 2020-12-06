@@ -48,6 +48,7 @@ import tensorflow as tf
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 from scipy.spatial import distance
 from multiprocessing import Pool
+import get_deepwalk_embeddings
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
@@ -403,7 +404,7 @@ def replace_with_tree_based_embedding(df):
 replace embedding with deepwalk embeddings
 """
 def replace_with_deepwalk_embeddings(df):
-    embedding_df = pd.read_csv('deepwalk_embeddings.csv')
+    embedding_df = get_deepwalk_embeddings.generate_embeddings(df)
     df.embeddings = embedding_df.deepwalk_embedding
     return df
 

@@ -21,10 +21,9 @@ def deepwalk_embedding(Graph):
     embeddings = dw.get_embedding()
     return embeddings
 
-def generate_embeddings():
+def generate_embeddings(df):
     access_map = dict()  # accession -> {}
     networks_map = dict()
-    df = pd.read_csv('data/df_head_1000.csv')
     # df = df.head(5)
     indexes = list(df['index'])
     for index in indexes:
