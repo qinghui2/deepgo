@@ -8,6 +8,9 @@ import numpy as np
 import pandas as pd
 import click as ck
 import os
+from karateclub import DeepWalk
+import stringdb
+import time
 from Bio import SeqIO
 import subprocess
 import pexpect
@@ -49,6 +52,7 @@ from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 from scipy.spatial import distance
 from multiprocessing import Pool
 import get_deepwalk_embeddings
+
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
@@ -97,11 +101,17 @@ ind = 0
     help = 'shuffle seed of permuting the dataframe, a shuffle seed 0 means no shuffle'
 )
 @ck.option(
+    '--cached',
+    default = 0
+)
+@ck.option(
     '--embeddingmethod',
     help = 'original network embedding(net), tree based embedding(tree), deepwalk embedding(deep), fixed embedding all initialized to 0.1(fix)',
     default = 'net'
 )
-def main(function, device, org, train, param,embeddingmethod, shuffleseed,buildmethod, evomodel):
+def main(function, device, org, train, param,embeddingmethod, shuffleseed,buildmethod, evomodel,cached):
+    global CACHED
+    CACHED = cached
     global BUILDMETHOD
     BUILDMETHOD = buildmethod
     global EVOMODEL
@@ -175,10 +185,11 @@ def main(function, device, org, train, param,embeddingmethod, shuffleseed,buildm
             # f = model(params, is_train=train)
             # print(dims[dim], nb_filters[nb_fil], nb_convs[conv], nb_dense[den], f)
     # performanc_by_interpro()
-#Author: Qinghui Zhou
-#extract taxa from dataframe(each taxa is a protein sequence)
-#if the df is train df, return 20179 sequences, for tree reconstruct
-# return a dictionary where key is the id of the protein sequence and value is the protein sequence
+'''Author: Qinghui Zhou
+extract taxa from dataframe(each taxa is a protein sequence)
+if the df is train df, return 20179 sequences, for tree reconstruct
+return a dictionary where key is the id of the protein sequence and value is the protein sequence
+'''
 def extract_taxa(df):
     # df_cp = df
     # t =2
@@ -188,11 +199,13 @@ def extract_taxa(df):
         taxa_dict[index] = df.loc[index, 'sequences']
    # r = 2
     return taxa_dict
-#author:Qinghui Zhou
-## output edge list of a newick tree for embedding
-#input is the tree file in nwk format
-# output map: map node_id(int) to taxon name for only leaf nodes
-# output edge list: id0 id1 weight
+
+'''@author:Qinghui Zhou
+# output edge list of a newick tree for embedding
+input is the tree file in nwk format
+output map: map node_id(int) to taxon name for only leaf nodes
+output edge list: id0 id1 weight
+'''
 def convert(input):
     tree_res_dir = resdir+"/tree_embeddings"
     if(not os.path.isdir(tree_res_dir)):
@@ -242,10 +255,11 @@ def convert(input):
     c = nx.is_connected(G)
     b = 2
     return  G
-#Author: Qinghui Zhou
-# given a set of sequences defined by df, generate the multiple sequence alignment
-# df: merged train and test df
-# path_to_alignment: the path to alignment executable
+'''@Author: Qinghui Zhou
+given a set of sequences defined by df, generate the multiple sequence alignment
+df: merged train and test df
+path_to_alignment: the path to alignment executable
+'''
 def get_tree_emb(df,path_to_alignment):
     tree_res_dir = resdir + "/tree_embeddings"
     if(not os.path.isdir(tree_res_dir)):
@@ -279,6 +293,7 @@ def get_tree_emb(df,path_to_alignment):
     aln_out_name_phy = "temp_output/alignment_result.phylip"
     count = SeqIO.write(records, aln_out_name_phy, "phylip")
     print("Converted %i records" % count)
+    time.sleep(10)
     #get phylogenetic tree from input alignment
     print("getting phylogenetic tree")
     #get node embeddings for leaves of the tree
@@ -333,8 +348,9 @@ def get_tree_emb(df,path_to_alignment):
     copyfile("temp_output/emb.emb",tree_node_emb_dir+"/emb.emb")
     copyfile("temp_output/emb.model",tree_node_emb_dir+"/emb.model")
 
-#Author: Qinghui Zhou
+'''@Author: Qinghui Zhou
 #replace the embedding(network) with fixed vector, n>0 and n<1
+'''
 def replace_with_fixed_embedding(df,n):
     # emb_frame = df['embeddings']#.to_frame()
     # d = 2
@@ -353,12 +369,17 @@ def replace_with_fixed_embedding(df,n):
     #     embd = row['embeddings']
 
 
-#Author: Qinghui Zhou
-# replace the embedding with tree based embeddings
-# the input embedding file should be in format id, emb, ...
+'''@Author: Qinghui Zhou
+ replace the embedding with tree based embeddings
+ the input embedding file should be in format id, emb, ...
+'''
 def replace_with_tree_based_embedding(df):
     # pass
     emb_f_name = "temp_output/emb.emb"
+    if CACHED != 0:
+        tree_res_dir = resdir + "/tree_embeddings"
+        tree_node_emb_dir = tree_res_dir + "/tree_node_embedding"
+        emb_f_name = tree_node_emb_dir+"/emb.emb"
     emb_file = open(emb_f_name,"r")
     next(emb_file)
     # read mapping
@@ -377,6 +398,8 @@ def replace_with_tree_based_embedding(df):
     # z3 = emb_mapping['15']
     # map the embedding mapping back to original id
     taxon_mapping = open("data/tree_embds/taxon_map.txt","r")
+    if CACHED != 0:
+        taxon_mapping = open(tree_res_dir+"/taxon_mapping.txt")
     true_emb_mapping = dict()
     s = taxon_mapping.readlines()
     for k in s:
@@ -408,9 +431,6 @@ def replace_with_deepwalk_embeddings(df):
     df.embeddings = embedding_df.deepwalk_embedding
     return df
 
-
-
-
 def load_data(org=None):
     # FUNCTION ="bp"
     #size 25224
@@ -427,10 +447,13 @@ def load_data(org=None):
     df = df.head(1000)
     if(EMBEDDINGMETHOD == 'tree'):
         all_taxa = extract_taxa(df)
-        get_tree_emb(all_taxa,"../muscle")
+        if CACHED == 0:
+            get_tree_emb(all_taxa,"../muscle")
         df = replace_with_tree_based_embedding(df)
     if(EMBEDDINGMETHOD == 'fixed'):
         df = replace_with_fixed_embedding(df, 0.1)
+    if(EMBEDDINGMETHOD == 'deep'):
+        df = replace_with_deepwalk_embeddings(df)
     n = len(df)
     print(n)
     index = df.index.values
