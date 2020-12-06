@@ -84,9 +84,10 @@ def generate_embeddings(df):
     # return G
 
 
-if __name__ == '__main__':
-    embeddings_df = generate_embeddings()
-    embeddings_df.to_csv('deepwalk_embeddings.csv')
+# if __name__ == '__main__':
+#     df = pd.read_csv('data/df_head_1000.csv')
+#     embeddings_df = generate_embeddings(df)
+#     embeddings_df.to_csv('deepwalk_embeddings.csv')
     # embeddings = deepwalk_embedding(ppi_graph)
     # with open("deepwalk_embeddings.csv", "w", newline="") as f:
     #     writer = csv.writer(f)
