@@ -2,4 +2,7 @@ data/
 venv/
 *.pyc
 *.out
+*.h5
+*.csv
+*.DS_Store
 *.pdf
